@@ -2,7 +2,6 @@ import json
 import re
 
 from . import (
-  TitleFetcher,
   URLFinder,
   HtmlTitleParser,
   UserAgent,
