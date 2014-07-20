@@ -1,3 +1,6 @@
+__version__ = '2.0'
+__url__ = 'https://github.com/lilydjwg/fetchtitle'
+
 import re
 import socket
 from urllib.parse import urlsplit, urljoin
@@ -20,7 +23,7 @@ try:
 except ImportError:
   from http_parser.pyparser import HttpParser
 
-UserAgent = 'FetchTitle/2.0 (https://github.com/lilydjwg/fetchtitle)'
+UserAgent = 'FetchTitle/%s (%s)' % (__version__, __url__)
 
 def get_charset_from_ctype(ctype):
   pos = ctype.find('charset=')
