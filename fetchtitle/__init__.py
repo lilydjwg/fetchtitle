@@ -5,6 +5,8 @@ import struct
 import socket
 import logging
 import encodings.idna
+from functools import partial
+from collections import namedtuple
 
 try:
   py3 = True
@@ -12,13 +14,12 @@ try:
 except ImportError:
   py3 = False
   from urlparse import urlsplit, urljoin  # py2
-from functools import partial
-from collections import namedtuple
+  chr = unichr
 
 try:
   from html.parser import HTMLParser
 except ImportError:    #  py2
-  from htmllib import HTMLParser
+  from HTMLParser import HTMLParser
 
 try:
   from html.entities import entitydefs
@@ -27,7 +28,6 @@ except ImportError:
 
 import tornado.ioloop
 import tornado.iostream
-
 from tornado.httpclient import AsyncHTTPClient
 
 # try to import C parser then fallback in pure python parser.
@@ -62,28 +62,28 @@ class HtmlTitleParser(HTMLParser):
     if py3:
         super().__init__()
     else:
-        HTMLParser.__init__(self, None)
+        HTMLParser.__init__(self)
     self.title = []
 
   def feed(self, bytesdata):
     if bytesdata:
       if py3:
-        bytesdata = bytesdata.decode('latin1')
-      HTMLParser.feed(self, bytesdata)
+        super().feed(bytesdata.decode('latin1'))
+      else:
+        HTMLParser.feed(self, bytesdata)
     else:
       self.close()
 
   def close(self):
     self._check_result(force=True)
-    HTMLParser.close(self)
+    if py3:
+      super().close()
+    else:
+      HTMLParser.close(self)
 
-  def handle_starttag(self, tag, method, *args):
+  def handle_starttag(self, tag, attrs):
     # Google Search uses wrong meta info
     # Baidu Cache declared charset twice. The former is correct.
-    if py3:
-      attrs = method
-    else:
-      attrs = args[0]
     if tag == 'meta' and not self.charset:
       attrs = dict(attrs)
       # try charset attribute first. Wrong quoting may result in this:
@@ -97,13 +97,14 @@ class HtmlTitleParser(HTMLParser):
 
     self._check_result()
 
-  def handle_data(self, data, unicode=False):
+  def handle_data(self, data, # *, commented for Python 2
+                  unicode=False):
     if not unicode and py3:
-      data = data
+      data = data.encode('latin1') # encode back
     if self._title_coming:
       self.title.append(data)
 
-  def handle_endtag(self, tag, *args):
+  def handle_endtag(self, tag):
     self._title_coming = False
     self._check_result()
 
@@ -112,8 +113,6 @@ class HtmlTitleParser(HTMLParser):
       x = int(name[1:], 16)
     else:
       x = int(name)
-    if x > 255:
-        return
     ch = chr(x)
     self.handle_data(ch, unicode=True)
 
@@ -124,7 +123,8 @@ class HtmlTitleParser(HTMLParser):
       ch = '&' + name
     self.handle_data(ch, unicode=True)
 
-  def _check_result(self, force=False):
+  def _check_result(self, # *, commented for Python 2
+                    force=False):
     if self.result is not None:
       return
 
@@ -282,7 +282,7 @@ class TitleFetcher:
   _content_finders = (TitleFinder, PNGFinder, JPEGFinder, GIFFinder)
   _url_finders = ()
 
-  def __init__(self, url, callback,
+  def __init__(self, url, callback, # *, commented for Python 2
                timeout=None, max_follows=None, io_loop=None,
                content_finders=None, url_finders=None, referrer=None,
                run_at_init=True):
