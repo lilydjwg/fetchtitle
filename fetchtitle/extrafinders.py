@@ -1,4 +1,3 @@
-#-*- coding: utf-8 -*-
 import json
 import re
 
@@ -76,12 +75,12 @@ class WeixinCopy(URLFinder):
       if src.endswith('#rd'):
         src = src[:-3]
     else:
-      src = '(未知)'
+      src = None
     p = HtmlTitleParser()
     p.feed(res.body)
     if p.result:
       title = p.result
     else:
-      title = '(未知)'
+      title = None
     self.done((title, src))
 
