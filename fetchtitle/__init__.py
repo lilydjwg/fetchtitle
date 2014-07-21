@@ -70,7 +70,7 @@ class HtmlTitleParser(HTMLParser):
       if py3:
         super().feed(bytesdata.decode('latin1'))
       else:
-        HTMLParser.feed(self, bytesdata)
+        HTMLParser.feed(self, bytesdata.decode('latin1'))
     else:
       self.close()
 
@@ -130,10 +130,12 @@ class HtmlTitleParser(HTMLParser):
 
     if (force or self.charset is not None) \
        and self.title:
-      self.result = ''.join(
-        x if isinstance(x, str) else x.decode(
+      _type = str if py3 else unicode
+      _errors = "ignore" if not py3 else "surrogateescape"
+      self.result = u''.join(
+        x if isinstance(x, _type) else x.decode(
           self.charset or self.default_charset,
-          errors = 'surrogateescape',
+          errors=_errors,
         ) for x in self.title
       )
 
