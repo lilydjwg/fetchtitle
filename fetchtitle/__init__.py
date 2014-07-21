@@ -1,17 +1,30 @@
 __version__ = '2.0'
 __url__ = 'https://github.com/lilydjwg/fetchtitle'
 
-import re
-import socket
-from urllib.parse import urlsplit, urljoin
-from functools import partial
-from collections import namedtuple
 import struct
-import json
+import socket
 import logging
 import encodings.idna
-from html.parser import HTMLParser
-from html.entities import entitydefs
+from functools import partial
+from collections import namedtuple
+
+try:
+  py3 = True
+  from urllib.parse import urlsplit, urljoin
+except ImportError:
+  py3 = False
+  from urlparse import urlsplit, urljoin  # py2
+  chr = unichr
+
+try:
+  from html.parser import HTMLParser
+except ImportError:    #  py2
+  from HTMLParser import HTMLParser
+
+try:
+  from html.entities import entitydefs
+except ImportError:
+  from htmlentitydefs import entitydefs # py2
 
 import tornado.ioloop
 import tornado.iostream
@@ -46,18 +59,28 @@ class HtmlTitleParser(HTMLParser):
 
   def __init__(self):
     # use a list to store literal bytes and escaped Unicode
+    if py3:
+        super().__init__()
+    else:
+        HTMLParser.__init__(self)
     self.title = []
-    super().__init__()
 
   def feed(self, bytesdata):
     if bytesdata:
-      super().feed(bytesdata.decode('latin1'))
+      data = bytesdata.decode('latin1')
+      if py3:
+        super().feed(data)
+      else:
+        HTMLParser.feed(self, data)
     else:
       self.close()
 
   def close(self):
     self._check_result(force=True)
-    super().close()
+    if py3:
+      super().close()
+    else:
+      HTMLParser.close(self)
 
   def handle_starttag(self, tag, attrs):
     # Google Search uses wrong meta info
@@ -75,8 +98,9 @@ class HtmlTitleParser(HTMLParser):
 
     self._check_result()
 
-  def handle_data(self, data, *, unicode=False):
-    if not unicode:
+  def handle_data(self, data, # *, commented for Python 2
+                  unicode=False):
+    if not unicode and py3:
       data = data.encode('latin1') # encode back
     if self._title_coming:
       self.title.append(data)
@@ -100,16 +124,19 @@ class HtmlTitleParser(HTMLParser):
       ch = '&' + name
     self.handle_data(ch, unicode=True)
 
-  def _check_result(self, *, force=False):
+  def _check_result(self, # *, commented for Python 2
+                    force=False):
     if self.result is not None:
       return
 
     if (force or self.charset is not None) \
        and self.title:
-      self.result = ''.join(
-        x if isinstance(x, str) else x.decode(
+      string_type = str if py3 else unicode
+      error_handler = 'replace' if not py3 else 'surrogateescape'
+      self.result = string_type().join(
+        x if isinstance(x, string_type) else x.decode(
           self.charset or self.default_charset,
-          errors = 'surrogateescape',
+          errors = error_handler,
         ) for x in self.title
       )
 
@@ -202,7 +229,10 @@ class JPEGFinder(ContentFinder):
         logging.warn('Bad JPEG signature: %r', self.buf[:3])
         return self._mt._replace(dimension='Bad JPEG')
       else:
-        self.blocklen = self.buf[4] * 256 + self.buf[5] + 2
+        if py3:
+          self.blocklen = self.buf[4] * 256 + self.buf[5] + 2
+        else:
+          self.blocklen = ord(self.buf[4]) * 256 + ord(self.buf[5]) + 2
         self.buf = self.buf[2:]
         self.isfirst = False
 
@@ -255,7 +285,7 @@ class TitleFetcher:
   _content_finders = (TitleFinder, PNGFinder, JPEGFinder, GIFFinder)
   _url_finders = ()
 
-  def __init__(self, url, callback, *,
+  def __init__(self, url, callback, # *, commented for Python 2
                timeout=None, max_follows=None, io_loop=None,
                content_finders=None, url_finders=None, referrer=None,
                run_at_init=True):
@@ -417,6 +447,8 @@ class TitleFetcher:
       )
 
   def _prepare_host(self, host):
+    if not py3 and isinstance(host, str):
+      host = host.decode("utf-8")
     host = encodings.idna.nameprep(host)
     return b'.'.join(encodings.idna.ToASCII(x) if x else b''
                      for x in host.split('.')).decode('ascii')
