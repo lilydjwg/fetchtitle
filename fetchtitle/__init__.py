@@ -1,20 +1,33 @@
 __version__ = '2.0'
 __url__ = 'https://github.com/lilydjwg/fetchtitle'
 
-import re
-import socket
-from urllib.parse import urlsplit, urljoin
-from functools import partial
-from collections import namedtuple
 import struct
-import json
+import socket
 import logging
 import encodings.idna
-from html.parser import HTMLParser
-from html.entities import entitydefs
+
+try:
+  py3 = True
+  from urllib.parse import urlsplit, urljoin
+except ImportError:
+  py3 = False
+  from urlparse import urlsplit, urljoin  # py2
+from functools import partial
+from collections import namedtuple
+
+try:
+  from html.parser import HTMLParser
+except ImportError:    #  py2
+  from htmllib import HTMLParser
+
+try:
+  from html.entities import entitydefs
+except ImportError:
+  from htmlentitydefs import entitydefs # py2
 
 import tornado.ioloop
 import tornado.iostream
+
 from tornado.httpclient import AsyncHTTPClient
 
 # try to import C parser then fallback in pure python parser.
@@ -46,22 +59,31 @@ class HtmlTitleParser(HTMLParser):
 
   def __init__(self):
     # use a list to store literal bytes and escaped Unicode
+    if py3:
+        super().__init__()
+    else:
+        HTMLParser.__init__(self, None)
     self.title = []
-    super().__init__()
 
   def feed(self, bytesdata):
     if bytesdata:
-      super().feed(bytesdata.decode('latin1'))
+      if py3:
+        bytesdata = bytesdata.decode('latin1')
+      HTMLParser.feed(self, bytesdata)
     else:
       self.close()
 
   def close(self):
     self._check_result(force=True)
-    super().close()
+    HTMLParser.close(self)
 
-  def handle_starttag(self, tag, attrs):
+  def handle_starttag(self, tag, method, *args):
     # Google Search uses wrong meta info
     # Baidu Cache declared charset twice. The former is correct.
+    if py3:
+      attrs = method
+    else:
+      attrs = args[0]
     if tag == 'meta' and not self.charset:
       attrs = dict(attrs)
       # try charset attribute first. Wrong quoting may result in this:
@@ -75,13 +97,13 @@ class HtmlTitleParser(HTMLParser):
 
     self._check_result()
 
-  def handle_data(self, data, *, unicode=False):
-    if not unicode:
-      data = data.encode('latin1') # encode back
+  def handle_data(self, data, unicode=False):
+    if not unicode and py3:
+      data = data
     if self._title_coming:
       self.title.append(data)
 
-  def handle_endtag(self, tag):
+  def handle_endtag(self, tag, *args):
     self._title_coming = False
     self._check_result()
 
@@ -90,6 +112,8 @@ class HtmlTitleParser(HTMLParser):
       x = int(name[1:], 16)
     else:
       x = int(name)
+    if x > 255:
+        return
     ch = chr(x)
     self.handle_data(ch, unicode=True)
 
@@ -100,7 +124,7 @@ class HtmlTitleParser(HTMLParser):
       ch = '&' + name
     self.handle_data(ch, unicode=True)
 
-  def _check_result(self, *, force=False):
+  def _check_result(self, force=False):
     if self.result is not None:
       return
 
@@ -202,7 +226,10 @@ class JPEGFinder(ContentFinder):
         logging.warn('Bad JPEG signature: %r', self.buf[:3])
         return self._mt._replace(dimension='Bad JPEG')
       else:
-        self.blocklen = self.buf[4] * 256 + self.buf[5] + 2
+        if py3:
+          self.blocklen = self.buf[4] * 256 + self.buf[5] + 2
+        else:
+          self.blocklen = ord(self.buf[4]) * 256 + ord(self.buf[5]) + 2
         self.buf = self.buf[2:]
         self.isfirst = False
 
@@ -255,7 +282,7 @@ class TitleFetcher:
   _content_finders = (TitleFinder, PNGFinder, JPEGFinder, GIFFinder)
   _url_finders = ()
 
-  def __init__(self, url, callback, *,
+  def __init__(self, url, callback,
                timeout=None, max_follows=None, io_loop=None,
                content_finders=None, url_finders=None, referrer=None,
                run_at_init=True):
@@ -417,6 +444,8 @@ class TitleFetcher:
       )
 
   def _prepare_host(self, host):
+    if not py3 and isinstance(host, str):
+      host = host.decode("utf-8")
     host = encodings.idna.nameprep(host)
     return b'.'.join(encodings.idna.ToASCII(x) if x else b''
                      for x in host.split('.')).decode('ascii')

@@ -1,6 +1,6 @@
 from . import *
 
-def main(urls, *, url_finders=None):
+def main(urls, url_finders=None):
   from .extrafinders import GithubFinder
   if not url_finders:
     url_finders = (GithubFinder,)
@@ -24,7 +24,7 @@ def main(urls, *, url_finders=None):
       self.n += 1
 
   try:
-    from nicelogger import enable_pretty_logging
+    from tornado.log import enable_pretty_logging
     enable_pretty_logging()
   except ImportError:
     pass
