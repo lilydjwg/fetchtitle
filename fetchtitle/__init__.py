@@ -1,6 +1,7 @@
 __version__ = '2.0'
 __url__ = 'https://github.com/lilydjwg/fetchtitle'
 
+import re
 import struct
 import socket
 import logging
@@ -37,6 +38,7 @@ except ImportError:
   from http_parser.pyparser import HttpParser
 
 UserAgent = 'FetchTitle/%s (%s)' % (__version__, __url__)
+_cookie_re = re.compile(r'(?:,\s*|^)([^=\s]+=[^;\s]+)')
 
 def get_charset_from_ctype(ctype):
   pos = ctype.find('charset=')
@@ -509,7 +511,7 @@ class TitleFetcher:
     if not setcookie:
       return
 
-    cookies = [c.rsplit(None, 1)[-1] for c in setcookie.split('; expires')[:-1]]
+    cookies = _cookie_re.findall(setcookie)
     self._cookie = 'Cookie: ' + '; '.join(cookies)
 
   def on_headers_done(self):
