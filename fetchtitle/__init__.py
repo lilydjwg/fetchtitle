@@ -51,7 +51,12 @@ def get_charset_from_ctype(ctype):
       # cp932's IANA name (Windows-31J), extended shift_jis
       # https://en.wikipedia.org/wiki/Code_page_932
       charset = 'cp932'
-    return charset
+    try:
+      ''.encode(charset)
+      return charset
+    except LookupError:
+      logger.warn('got unknown character set name %r, ignoring.', charset)
+      return
 
 class HtmlTitleParser(HTMLParser):
   charset = title = None
