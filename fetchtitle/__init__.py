@@ -160,7 +160,7 @@ ConnectionClosed = SingletonFactory('ConnectionClosed')
 TooManyRedirection = SingletonFactory('TooManyRedirection')
 Timeout = SingletonFactory('Timeout')
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('fetchtitle')
 
 class ContentFinder:
   buf = b''
