@@ -525,7 +525,7 @@ class TitleFetcher:
     self.headers = self.parser.get_headers()
 
     self.status_code = self.parser.get_status_code()
-    if self.status_code in (301, 302):
+    if self.status_code in (301, 302, 307, 308):
       self.process_cookie() # or we may be redirecting to a loop
       logger.debug('%s: redirect to %s', self.origurl, self.headers['Location'])
       self.followed_times += 1
