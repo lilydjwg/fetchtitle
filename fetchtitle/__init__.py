@@ -2,6 +2,7 @@ __version__ = '2.0'
 __url__ = 'https://github.com/lilydjwg/fetchtitle'
 
 import re
+import time
 import struct
 import socket
 import logging
@@ -159,6 +160,7 @@ defaultMediaType = MediaType('application/octet-stream', None, None)
 ConnectionClosed = SingletonFactory('ConnectionClosed')
 TooManyRedirection = SingletonFactory('TooManyRedirection')
 Timeout = SingletonFactory('Timeout')
+TitleTooFaraway = SingletonFactory('TitleTooFaraway')
 
 logger = logging.getLogger('fetchtitle')
 
@@ -179,7 +181,7 @@ class ContentFinder:
 class TitleFinder(ContentFinder):
   parser = None
   pos = 0
-  maxpos = 102400 # look at most around 100K
+  maxpos = 1024 * 1024  # look at most around 1M as the title may be too long
 
   @staticmethod
   def _match_type(ctype):
@@ -193,12 +195,18 @@ class TitleFinder(ContentFinder):
   def __call__(self, data):
     if data:
       self.pos += len(data)
-    if self.pos > self.maxpos:
-      # stop here
-      data = b''
+    exceeded = self.pos - self.maxpos
+    if exceeded > 0:
+      if exceeded < len(data):
+        data = data[:-exceeded]
+      else:
+        data = b''
     self.parser.feed(data)
     if self.parser.result:
       return self.parser.result
+    elif exceeded > 0:
+      logger.warn('searched %d bytes but did not find title', self.maxpos)
+      return TitleTooFaraway
 
 class PNGFinder(ContentFinder):
   _mime = 'image/png'
