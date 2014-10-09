@@ -140,7 +140,8 @@ class HtmlTitleParser(HTMLParser):
     if (force or self.charset is not None) \
        and self.title:
       string_type = str if py3 else unicode
-      error_handler = 'replace' if not py3 else 'surrogateescape'
+      # always use 'replace' because surrogateescape may not be used elsewhere
+      error_handler = 'replace'
       self.result = string_type().join(
         x if isinstance(x, string_type) else x.decode(
           self.charset or self.default_charset,
