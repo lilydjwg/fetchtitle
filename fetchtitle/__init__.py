@@ -5,6 +5,7 @@ import re
 import time
 import struct
 import socket
+import ssl
 import logging
 import encodings.idna
 from functools import partial
@@ -58,6 +59,14 @@ def get_charset_from_ctype(ctype):
     except LookupError:
       logger.warn('got unknown character set name %r, ignoring.', charset)
       return
+
+_context = None
+def get_ssl_context():
+  global _context
+  if not _context:
+    _context = ssl.create_default_context()
+    _context.load_default_certs()
+  return _context
 
 class HtmlTitleParser(HTMLParser):
   charset = title = None
@@ -371,29 +380,42 @@ class TitleFetcher:
     self.run_callback(Timeout)
 
   def parse_url(self, url):
-    '''parse `url`, set self.host and return address and stream class'''
+    '''parse `url`, set self.host and self._protocol and return address'''
     self.url = u = urlsplit(url)
     self.host = u.netloc
 
+    self._protocol = u.scheme
     if u.scheme == 'http':
-      addr = u.hostname, u.port or 80
-      stream = tornado.iostream.IOStream
+      default_port = 80
     elif u.scheme == 'https':
-      addr = u.hostname, u.port or 443
-      stream = tornado.iostream.SSLIOStream
+      default_port = 443
     else:
       raise ValueError('bad url: %r' % url)
 
-    return addr, stream
+    addr = u.hostname, u.port or default_port
+    return addr
 
-  def new_connection(self, addr, StreamClass):
+  def new_connection(self, addr):
     '''set self.addr, self.stream and connect to host'''
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     self.addr = addr
-    self.stream = StreamClass(s)
+
+    if self._protocol == 'https':
+      self.stream = tornado.iostream.SSLIOStream(
+          s, ssl_options = get_ssl_context())
+    else:
+      self.stream = tornado.iostream.IOStream(s)
+
     logger.debug('%s: connecting to %s...', self.origurl, addr)
     self.stream.set_close_callback(self.before_connected)
-    self.stream.connect(addr, self.send_request)
+
+    if self._protocol == 'https':
+      self.stream.connect(
+        addr, self.send_request,
+        server_hostname = addr[0],
+      )
+    else:
+      self.stream.connect(addr, self.send_request)
 
   def new_url(self, url):
     self.url_visited.append(url)
@@ -406,11 +428,11 @@ class TitleFetcher:
         f()
         return
 
-    addr, StreamClass = self.parse_url(url)
+    addr = self.parse_url(url)
     if addr != self.addr:
       if self.stream:
         self.stream.close()
-      self.new_connection(addr, StreamClass)
+      self.new_connection(addr)
     else:
       logger.debug('%s: try to reuse existing connection to %s', self.origurl, self.addr)
       try:
@@ -419,7 +441,7 @@ class TitleFetcher:
         logger.debug('%s: server at %s doesn\'t like keep-alive, will reconnect.', self.origurl, self.addr)
         # The close callback should have already run
         self.stream.close()
-        self.new_connection(addr, StreamClass)
+        self.new_connection(addr)
 
   def run_callback(self, arg):
     self.io_loop.remove_timeout(self._timeout)
