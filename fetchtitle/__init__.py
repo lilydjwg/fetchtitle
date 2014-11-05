@@ -65,7 +65,11 @@ def get_ssl_context():
   global _context
   if not _context:
     _context = ssl.create_default_context()
-    _context.load_default_certs()
+    # have to when not verifying certificates
+    _context.check_hostname = False
+    # don't verify certificates; there are too many untrusted sites, and we
+    # won't get hurt by them
+    _context.verify_mode = ssl.CERT_NONE
   return _context
 
 class HtmlTitleParser(HTMLParser):
