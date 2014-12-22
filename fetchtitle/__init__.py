@@ -117,7 +117,8 @@ class HtmlTitleParser(HTMLParser):
     elif tag == 'title':
       self._title_coming = True
 
-    self._check_result()
+    if not self._title_coming:
+      self._check_result()
 
   def handle_data(self, data, # *, commented for Python 2
                   unicode=False):
@@ -127,8 +128,9 @@ class HtmlTitleParser(HTMLParser):
       self.title.append(data)
 
   def handle_endtag(self, tag):
-    self._title_coming = False
-    self._check_result()
+    if tag == 'title':
+      self._title_coming = False
+      self._check_result()
 
   def handle_charref(self, name):
     if name[0] == 'x':

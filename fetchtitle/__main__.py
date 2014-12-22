@@ -69,6 +69,7 @@ def test():
     'http://www.wooyun.org/bugs/wooyun-2014-069132?214&1780', # provide cookie or loop
     'https://togetherjs.com/', # fail if no SNI
     'https://forum.suse.org.cn/', # most Linux distributions seem not to trust this
+    'http://www.aosabook.org/en/posa/parsing-xml-at-the-speed-of-light.html', # <span> tag inside <title> tag
   )
   main(urls)
 
