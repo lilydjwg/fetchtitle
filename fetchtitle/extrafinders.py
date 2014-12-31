@@ -1,5 +1,6 @@
 import json
 import re
+import logging
 
 from . import (
   URLFinder,
@@ -7,12 +8,20 @@ from . import (
   UserAgent,
 )
 
+logger = logging.getLogger(__name__)
+
 def _prepare_field(d, key, prefix):
   d[key] = prefix + d[key] if d.get(key, False) else ''
 
 class GithubFinder(URLFinder):
-  _url_pat = re.compile(r'https://github\.com/(?!blog/)(?P<repo_path>[^/]+/[^/]+)/?$')
+  _url_pat = re.compile(r'https://github\.com/(?!blog/|showcases/)(?P<repo_path>[^/]+/[^/]+)/?$')
   _api_pat = 'https://api.github.com/repos/{repo_path}'
+
+  @classmethod
+  def match_url(cls, url, fetcher):
+    print(url, fetcher)
+    if not getattr(fetcher, '_no_github', False):
+      return super().match_url(url, fetcher)
 
   def __call__(self):
     m = self.match
@@ -24,11 +33,24 @@ class GithubFinder(URLFinder):
 
   def parse_info(self, res):
     if res.error:
-      self.done(res.error)
+      if res.error.code == 404:
+        logger.debug('got 404 from GitHub API, retry with original URL')
+        cloned = self.fetcher.clone(
+          self.fetcher.fullurl, self._original_func,
+          run_at_init = False,
+        )
+        cloned._no_github = True
+        self.fetcher = cloned
+        cloned.run()
+      else:
+        self.done(res.error)
       return
     repoinfo = json.loads(res.body.decode('utf-8'))
     self.response = res
     self.done(repoinfo)
+
+  def _original_func(self, info, fetcher):
+    self.done(info)
 
 class GithubUserFinder(GithubFinder):
   _url_pat = re.compile(r'https://github\.com/(?!blog(?:$|/))(?P<user>[^/]+)/?$')
