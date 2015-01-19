@@ -2,9 +2,9 @@ from . import *
 
 def main(urls, # *, commented for Python 2
          url_finders=None):
-  from .extrafinders import GithubFinder
+  from .extrafinders import GithubFinder, GithubUserFinder
   if not url_finders:
-    url_finders = (GithubFinder,)
+    url_finders = (GithubFinder, GithubUserFinder)
 
   class BatchFetcher:
     n = 0
@@ -70,11 +70,14 @@ def test():
     'https://togetherjs.com/', # fail if no SNI
     'https://forum.suse.org.cn/', # most Linux distributions seem not to trust this
     'http://www.aosabook.org/en/posa/parsing-xml-at-the-speed-of-light.html', # <span> tag inside <title> tag
+    'http://github.com/contact', # redirect and should not use GitHub API
   )
   main(urls)
 
 if __name__ == "__main__":
   import sys
+  # make errors shorter
+  sys.setrecursionlimit(100)
   try:
     if len(sys.argv) == 1:
       sys.exit('no urls given.')

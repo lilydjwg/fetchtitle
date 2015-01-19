@@ -19,7 +19,6 @@ class GithubFinder(URLFinder):
 
   @classmethod
   def match_url(cls, url, fetcher):
-    print(url, fetcher)
     if not getattr(fetcher, '_no_github', False):
       return super().match_url(url, fetcher)
 
@@ -40,7 +39,6 @@ class GithubFinder(URLFinder):
           run_at_init = False,
         )
         cloned._no_github = True
-        self.fetcher = cloned
         cloned.run()
       else:
         self.done(res.error)
@@ -50,6 +48,9 @@ class GithubFinder(URLFinder):
     self.done(repoinfo)
 
   def _original_func(self, info, fetcher):
+    # copy status_code and concat url_visited to original fetcher
+    self.fetcher.status_code = fetcher.status_code
+    self.fetcher.url_visited += fetcher.url_visited[1:]
     self.done(info)
 
 class GithubUserFinder(GithubFinder):
