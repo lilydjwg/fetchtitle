@@ -72,6 +72,10 @@ def get_ssl_context():
     _context.verify_mode = ssl.CERT_NONE
   return _context
 
+def strip_and_collapse_whitespace(s):
+  # http://www.w3.org/TR/html5/infrastructure.html#strip-and-collapse-whitespace
+  return re.sub('[ \t\n\r\x0c]+', ' ', s).strip(' \t\n\r\x0c')
+
 class HtmlTitleParser(HTMLParser):
   charset = title = None
   default_charset = 'utf-8'
@@ -157,12 +161,12 @@ class HtmlTitleParser(HTMLParser):
       string_type = str if py3 else unicode
       # always use 'replace' because surrogateescape may not be used elsewhere
       error_handler = 'replace'
-      self.result = string_type().join(
+      self.result = strip_and_collapse_whitespace(string_type().join(
         x if isinstance(x, string_type) else x.decode(
           self.charset or self.default_charset,
           errors = error_handler,
         ) for x in self.title
-      )
+      ))
 
 class SingletonFactory:
   def __init__(self, name):
