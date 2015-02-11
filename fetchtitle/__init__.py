@@ -74,7 +74,7 @@ def get_ssl_context():
 
 def strip_and_collapse_whitespace(s):
   # http://www.w3.org/TR/html5/infrastructure.html#strip-and-collapse-whitespace
-  return re.sub('[ \t\n\r\x0c]+', ' ', s).strip(' \t\n\r\x0c')
+  return re.sub('[ \t\n\r\f]+', ' ', s).strip(' \t\n\r\f')
 
 class HtmlTitleParser(HTMLParser):
   charset = title = None
