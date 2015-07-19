@@ -108,10 +108,10 @@ class WeixinCopy(URLFinder):
     self.done((title, src))
 
 class NeteaseMusic(URLFinder):
-  _url_pat = re.compile(r'http://music\.163\.com/#/(?P<type>\w+)\?id=(?P<id>\d+)')
+  _url_pat = re.compile(r'http://music\.163\.com/#/(?:m/)?(?P<type>\w+)\?id=(?P<id>\d+)')
 
   def __call__(self):
-    url = 'http://music.163.com/api/{type}/detail?id={id}&csrf_token=' \
+    url = 'http://music.163.com/api/{type}/detail?id={id}&ids=[{id}]&csrf_token=' \
         .format_map(self.match.groupdict())
     self.get_httpclient().fetch(url, headers = {
       'Referer': 'http://music.163.com/',
