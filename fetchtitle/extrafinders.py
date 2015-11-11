@@ -111,8 +111,11 @@ class NeteaseMusic(URLFinder):
   _url_pat = re.compile(r'http://music\.163\.com/(?:#/)?(?:m/)?(?P<type>\w+)\?id=(?P<id>\d+)')
 
   def __call__(self):
-    url = 'http://music.163.com/api/{type}/detail?id={id}&ids=[{id}]&csrf_token=' \
-        .format_map(self.match.groupdict())
+    if self.match.group('type') == 'album':
+      url = 'http://music.163.com/api/{type}/{id}?id={id}&csrf_token='
+    else:
+      url = 'http://music.163.com/api/{type}/detail?id={id}&ids=[{id}]&csrf_token='
+    url = url.format_map(self.match.groupdict())
     self.get_httpclient().fetch(url, headers = {
       'Referer': 'http://music.163.com/',
     }, callback = self._got_info)
