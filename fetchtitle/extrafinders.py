@@ -124,3 +124,15 @@ class NeteaseMusic(URLFinder):
     info = json.loads(res.body.decode('utf-8'))
     self.done((self.match.group('type'), info))
 
+class ZhihuZhuanlan(URLFinder):
+  _url_pat = re.compile(r'http://zhuanlan\.zhihu\.com/(?P<name>[^/]+)/(?P<id>\d+)')
+
+  def __call__(self):
+    url = 'http://zhuanlan.zhihu.com/api/columns/{name}/posts/{id}'
+    url = url.format_map(self.match.groupdict())
+    self.get_httpclient().fetch(url, callback = self._got_info)
+
+  def _got_info(self, res):
+    info = json.loads(res.body.decode('utf-8'))
+    self.done(info)
+
