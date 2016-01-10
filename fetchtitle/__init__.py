@@ -137,7 +137,7 @@ class HtmlTitleParser(HTMLParser):
       self._check_result()
 
   def handle_charref(self, name):
-    if name[0] == 'x':
+    if name[0] in ('x', 'X'):
       x = int(name[1:], 16)
     else:
       x = int(name)
