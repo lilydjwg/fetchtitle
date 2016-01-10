@@ -127,7 +127,7 @@ class HtmlTitleParser(HTMLParser):
   def handle_data(self, data, # *, commented for Python 2
                   unicode=False):
     if not unicode and py3:
-      data = data.encode('latin1') # encode back
+      data = data.encode('latin1', 'ignore') # encode back
     if self._title_coming:
       self.title.append(data)
 
@@ -623,4 +623,3 @@ class URLFinder:
 
   def get_httpclient(self):
     return self.httpclient or AsyncHTTPClient()
-

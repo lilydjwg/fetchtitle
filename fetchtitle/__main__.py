@@ -71,6 +71,7 @@ def test():
     'https://forum.suse.org.cn/', # most Linux distributions seem not to trust this
     'http://www.aosabook.org/en/posa/parsing-xml-at-the-speed-of-light.html', # <span> tag inside <title> tag
     'http://github.com/contact', # redirect and should not use GitHub API
+    'http://caml.inria.fr/pub/docs/manual-ocaml/', # bad encoding example
   )
   main(urls)
 
