@@ -125,10 +125,10 @@ class NeteaseMusic(URLFinder):
     self.done((self.match.group('type'), info))
 
 class ZhihuZhuanlan(URLFinder):
-  _url_pat = re.compile(r'http://zhuanlan\.zhihu\.com/(?P<name>[^/]+)/(?P<id>\d+)')
+  _url_pat = re.compile(r'http://zhuanlan\.zhihu\.com/p/(?P<id>\d+)')
 
   def __call__(self):
-    url = 'http://zhuanlan.zhihu.com/api/columns/{name}/posts/{id}'
+    url = 'http://zhuanlan.zhihu.com/api/posts/{id}'
     url = url.format_map(self.match.groupdict())
     self.get_httpclient().fetch(url, callback = self._got_info)
 

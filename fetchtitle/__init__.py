@@ -1,4 +1,4 @@
-__version__ = '2.0'
+__version__ = '2.0.1'
 __url__ = 'https://github.com/lilydjwg/fetchtitle'
 
 import sys
