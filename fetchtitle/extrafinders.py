@@ -125,7 +125,7 @@ class NeteaseMusic(URLFinder):
     self.done((self.match.group('type'), info))
 
 class ZhihuZhuanlan(URLFinder):
-  _url_pat = re.compile(r'http://zhuanlan\.zhihu\.com/p/(?P<id>\d+)')
+  _url_pat = re.compile(r'https?://zhuanlan\.zhihu\.com/p/(?P<id>\d+)')
 
   def __call__(self):
     url = 'http://zhuanlan.zhihu.com/api/posts/{id}'
