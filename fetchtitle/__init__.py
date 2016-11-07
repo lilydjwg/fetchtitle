@@ -15,7 +15,6 @@ from collections import namedtuple
 try:
   py3 = True
   from urllib.parse import urlsplit, urljoin
-  from ipaddress import ip_address
   py35_or_later = sys.version_info >= (3,5)
 except ImportError:
   py3 = False
@@ -32,8 +31,10 @@ try:
 except ImportError:
   from htmlentitydefs import entitydefs # py2
 
+from ipaddress import ip_address
 import tornado.ioloop
 import tornado.iostream
+from tornado.netutil import ThreadedResolver
 from tornado.httpclient import AsyncHTTPClient
 
 # try to import C parser then fallback in pure python parser.
@@ -314,6 +315,7 @@ class GIFFinder(ContentFinder):
 class TitleFetcher:
   status_code = 0
   followed_times = 0 # 301, 302
+  resolver = None
   finder = None
   addr = None
   stream = None
@@ -329,7 +331,7 @@ class TitleFetcher:
   def __init__(self, url, callback, # *, commented for Python 2
                timeout=None, max_follows=None, io_loop=None,
                content_finders=None, url_finders=None, referrer=None,
-               run_at_init=True):
+               run_at_init=True, resolver=None):
     '''
     url: the (full) url to fetch
     callback: called with title or MediaType or an instance of SingletonFactory
@@ -356,6 +358,11 @@ class TitleFetcher:
       self._content_finders = content_finders
     if url_finders is not None:
       self._url_finders = url_finders
+    if resolver is not None:
+        self.resolver = resolver
+    else:
+        self.resolver = ThreadedResolver()
+        self.resolver.initialize(io_loop=self.io_loop)
 
     self.origurl = url
     self.url_visited = []
@@ -372,6 +379,7 @@ class TitleFetcher:
       'url_finders': self._url_finders,
       'referrer': self.fullurl,
       'run_at_init': self._run_at_init,
+      'resolver': self.resolver
     }
     mykwargs.update(kwargs)
     return self.__class__(*args, **mykwargs)
@@ -413,7 +421,7 @@ class TitleFetcher:
 
   def new_connection(self, addr):
     '''set self.addr, self.stream and connect to host'''
-    (host, port) = addr
+    host, port = addr
 
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     self.addr = addr
@@ -427,19 +435,18 @@ class TitleFetcher:
     logger.debug('%s: connecting to %s...', self.origurl, addr)
     self.stream.set_close_callback(self.before_connected)
 
-    if py3:
-      ip = socket.gethostbyname(host)
-      if not ip_address(ip).is_global:
+    addrinfo = self.resolver.resolve(host, port).result()
+    if not addrinfo:
+        raise ValueError('empty addrinfo: %r', addr)
+    ip = addrinfo[0][1][0]
+    if not ip_address(ip).is_global:
         raise ValueError('bad address: %r' % ip)
-      addr = (ip, port)
+    addr = ip, port
 
-    if self._protocol == 'https':
-      self.stream.connect(
-        addr, self.send_request,
-        server_hostname = host,
-      )
-    else:
-      self.stream.connect(addr, self.send_request)
+    self.stream.connect(
+      addr, self.send_request,
+      server_hostname = host,
+    )
 
   def new_url(self, url):
     self.url_visited.append(url)
