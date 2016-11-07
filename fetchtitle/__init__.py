@@ -15,6 +15,7 @@ from collections import namedtuple
 try:
   py3 = True
   from urllib.parse import urlsplit, urljoin
+  from ipaddress import ip_address
   py35_or_later = sys.version_info >= (3,5)
 except ImportError:
   py3 = False
@@ -412,6 +413,8 @@ class TitleFetcher:
 
   def new_connection(self, addr):
     '''set self.addr, self.stream and connect to host'''
+    (host, port) = addr
+
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     self.addr = addr
 
@@ -424,10 +427,16 @@ class TitleFetcher:
     logger.debug('%s: connecting to %s...', self.origurl, addr)
     self.stream.set_close_callback(self.before_connected)
 
+    if py3:
+      ip = socket.gethostbyname(host)
+      if not ip_address(ip).is_global:
+        raise ValueError('bad address: %r' % ip)
+      addr = (ip, port)
+
     if self._protocol == 'https':
       self.stream.connect(
         addr, self.send_request,
-        server_hostname = addr[0],
+        server_hostname = host,
       )
     else:
       self.stream.connect(addr, self.send_request)
