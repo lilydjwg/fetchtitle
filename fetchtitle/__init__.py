@@ -1,7 +1,6 @@
-__version__ = '2.0.1'
+__version__ = '2.1'
 __url__ = 'https://github.com/lilydjwg/fetchtitle'
 
-import sys
 import re
 import time
 import struct
@@ -15,7 +14,6 @@ from collections import namedtuple
 try:
   py3 = True
   from urllib.parse import urlsplit, urljoin
-  py35_or_later = sys.version_info >= (3,5)
 except ImportError:
   py3 = False
   from urlparse import urlsplit, urljoin  # py2
@@ -92,10 +90,7 @@ class HtmlTitleParser(HTMLParser):
   def __init__(self):
     # use a list to store literal bytes and escaped Unicode
     if py3:
-      if py35_or_later:
-        super().__init__(convert_charrefs=False)
-      else:
-        super().__init__()
+      super().__init__(convert_charrefs=False)
     else:
       HTMLParser.__init__(self)
     self.title = []
