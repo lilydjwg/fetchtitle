@@ -34,10 +34,8 @@ from tornado import gen
 import tornado.ioloop
 import tornado.iostream
 import tornado.tcpclient
-try:
-  from tornado.platform.caresresolver import CaresResolver as Resolver
-except ImportError:
-  from tornado.netutil import ThreadedResolver as Resolver
+# DON'T use CaresResolver here; it returns only IPv6 addresses for AF_UNSPEC
+from tornado.netutil import ThreadedResolver as Resolver
 from tornado.httpclient import AsyncHTTPClient
 
 # try to import C parser then fallback in pure python parser.
@@ -195,6 +193,7 @@ class GlobalOnlyResolver(Resolver):
   @gen.coroutine
   def resolve(self, host, port, family=socket.AF_UNSPEC):
     addrinfos = yield super().resolve(host, port, family=family)
+    print(addrinfos)
     addrinfos = [x for x in addrinfos
                  if ip_address(x[1][0]).is_global]
     if not addrinfos:
