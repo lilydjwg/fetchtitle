@@ -435,12 +435,23 @@ class TitleFetcher:
     fu.add_done_callback(partial(self._new_connection_resolved, host, port))
 
   def _new_connection_resolved(self, host, port, fu):
-    addrinfo = fu.result()
+    try:
+      addrinfo = fu.result()
+    except Exception as e:
+      self.run_callback(e)
+      return
+
     if not addrinfo:
-        raise ValueError('empty addrinfo: %r', addr)
+        error = ValueError('empty addrinfo: %r', addr)
+        self.run_callback(error)
+        return
+
     ip = addrinfo[0][1][0]
     if not ip_address(ip).is_global:
-        raise ValueError('bad address: %r' % ip)
+        error = ValueError('bad address: %r' % ip)
+        self.run_callback(error)
+        return
+
     addr = ip, port
     logger.debug('%s: %s resolves to %s', self.origurl, host, ip)
 
