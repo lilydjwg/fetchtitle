@@ -6,5 +6,4 @@ Requires
 
 Optional
 
-* pycurl
 * pycares
