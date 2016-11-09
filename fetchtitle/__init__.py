@@ -30,8 +30,10 @@ except ImportError:
   from htmlentitydefs import entitydefs # py2
 
 from ipaddress import ip_address
+from tornado import gen
 import tornado.ioloop
 import tornado.iostream
+import tornado.tcpclient
 try:
   from tornado.platform.caresresolver import CaresResolver as Resolver
 except ImportError:
@@ -188,6 +190,16 @@ Timeout = SingletonFactory('Timeout')
 TitleTooFaraway = SingletonFactory('TitleTooFaraway')
 
 logger = logging.getLogger('fetchtitle')
+
+class GlobalOnlyResolver(Resolver):
+  @gen.coroutine
+  def resolve(self, host, port, family=socket.AF_UNSPEC):
+    addrinfos = yield super().resolve(host, port, family=family)
+    addrinfos = [x for x in addrinfos
+                 if ip_address(x[1][0]).is_global]
+    if not addrinfos:
+      raise socket.gaierror(-2, 'Name or service not global', host)
+    raise gen.Return(addrinfos)
 
 class ContentFinder:
   buf = b''
@@ -359,7 +371,7 @@ class TitleFetcher:
     if resolver is not None:
         self.resolver = resolver
     else:
-        self.resolver = Resolver()
+        self.resolver = GlobalOnlyResolver()
         self.resolver.initialize(io_loop=self.io_loop)
 
     self.origurl = url
@@ -420,46 +432,27 @@ class TitleFetcher:
   def new_connection(self, addr):
     '''set self.addr, self.stream and connect to host'''
     host, port = addr
-
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     self.addr = addr
 
+    tcp = tornado.tcpclient.TCPClient(resolver=self.resolver)
     if self._protocol == 'https':
-      self.stream = tornado.iostream.SSLIOStream(
-          s, ssl_options = get_ssl_context())
+      ssl = get_ssl_context()
     else:
-      self.stream = tornado.iostream.IOStream(s)
+      ssl = None
 
     logger.debug('%s: connecting to %s...', self.origurl, addr)
-    # TODO: support IPv6 correctly
-    fu = self.resolver.resolve(host, port, family=socket.AF_INET)
-    fu.add_done_callback(partial(self._new_connection_resolved, host))
+    fu = tcp.connect(host, port, ssl_options = ssl)
+    fu.add_done_callback(self._new_connection_made)
 
-  def _new_connection_resolved(self, host, fu):
+  def _new_connection_made(self, fu):
     try:
-      addrinfo = fu.result()
+      self.stream = fu.result()
     except Exception as e:
       self.run_callback(e)
       return
 
-    if not addrinfo:
-      error = ValueError('empty addrinfo: %r', addrinfo)
-      self.run_callback(error)
-      return
-
-    ip, port = addrinfo[0][1]
-    if not ip_address(ip).is_global:
-      error = ValueError('bad address: %r' % ip)
-      self.run_callback(error)
-      return
-
-    logger.debug('%s: %s resolves to %s', self.origurl, host, ip)
-
     self.stream.set_close_callback(self.before_connected)
-    self.stream.connect(
-      (ip, port), self.send_request,
-      server_hostname = host,
-    )
+    self.send_request()
 
   def new_url(self, url):
     self.url_visited.append(url)
