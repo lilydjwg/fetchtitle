@@ -431,10 +431,11 @@ class TitleFetcher:
       self.stream = tornado.iostream.IOStream(s)
 
     logger.debug('%s: connecting to %s...', self.origurl, addr)
-    fu = self.resolver.resolve(host, port)
-    fu.add_done_callback(partial(self._new_connection_resolved, host, port))
+    # TODO: support IPv6 correctly
+    fu = self.resolver.resolve(host, port, family=socket.AF_INET)
+    fu.add_done_callback(partial(self._new_connection_resolved, host))
 
-  def _new_connection_resolved(self, host, port, fu):
+  def _new_connection_resolved(self, host, fu):
     try:
       addrinfo = fu.result()
     except Exception as e:
@@ -442,22 +443,21 @@ class TitleFetcher:
       return
 
     if not addrinfo:
-        error = ValueError('empty addrinfo: %r', addr)
-        self.run_callback(error)
-        return
+      error = ValueError('empty addrinfo: %r', addrinfo)
+      self.run_callback(error)
+      return
 
-    ip = addrinfo[0][1][0]
+    ip, port = addrinfo[0][1]
     if not ip_address(ip).is_global:
-        error = ValueError('bad address: %r' % ip)
-        self.run_callback(error)
-        return
+      error = ValueError('bad address: %r' % ip)
+      self.run_callback(error)
+      return
 
-    addr = ip, port
     logger.debug('%s: %s resolves to %s', self.origurl, host, ip)
 
     self.stream.set_close_callback(self.before_connected)
     self.stream.connect(
-      addr, self.send_request,
+      (ip, port), self.send_request,
       server_hostname = host,
     )
 
