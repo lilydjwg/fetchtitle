@@ -70,6 +70,7 @@ def test():
     'http://www.aosabook.org/en/posa/parsing-xml-at-the-speed-of-light.html', # <span> tag inside <title> tag
     'http://github.com/contact', # redirect and should not use GitHub API
     'http://caml.inria.fr/pub/docs/manual-ocaml/',
+    'http://localhost/', # should fail with ValueError
   )
   main(urls)
 

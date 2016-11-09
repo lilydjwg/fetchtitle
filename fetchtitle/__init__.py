@@ -34,7 +34,10 @@ except ImportError:
 from ipaddress import ip_address
 import tornado.ioloop
 import tornado.iostream
-from tornado.netutil import ThreadedResolver
+try:
+  from tornado.platform.caresresolver import CaresResolver as Resolver
+except ImportError:
+  from tornado.netutil import ThreadedResolver as Resolver
 from tornado.httpclient import AsyncHTTPClient
 
 # try to import C parser then fallback in pure python parser.
@@ -361,7 +364,7 @@ class TitleFetcher:
     if resolver is not None:
         self.resolver = resolver
     else:
-        self.resolver = ThreadedResolver()
+        self.resolver = Resolver()
         self.resolver.initialize(io_loop=self.io_loop)
 
     self.origurl = url
@@ -433,16 +436,20 @@ class TitleFetcher:
       self.stream = tornado.iostream.IOStream(s)
 
     logger.debug('%s: connecting to %s...', self.origurl, addr)
-    self.stream.set_close_callback(self.before_connected)
+    fu = self.resolver.resolve(host, port)
+    fu.add_done_callback(partial(self._new_connection_resolved, host, port))
 
-    addrinfo = self.resolver.resolve(host, port).result()
+  def _new_connection_resolved(self, host, port, fu):
+    addrinfo = fu.result()
     if not addrinfo:
         raise ValueError('empty addrinfo: %r', addr)
     ip = addrinfo[0][1][0]
     if not ip_address(ip).is_global:
         raise ValueError('bad address: %r' % ip)
     addr = ip, port
+    logger.debug('%s: %s resolves to %s', self.origurl, host, ip)
 
+    self.stream.set_close_callback(self.before_connected)
     self.stream.connect(
       addr, self.send_request,
       server_hostname = host,
