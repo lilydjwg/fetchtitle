@@ -480,10 +480,11 @@ class TitleFetcher:
 
   def run_callback(self, arg):
     self.io_loop.remove_timeout(self._timeout)
-    self._finished = True
     if self.stream:
       self.stream.close()
-    self._callback(arg, self)
+    if not self._finished:
+      self._finished = True
+      self._callback(arg, self)
 
   def send_request(self, nocallback=False):
     self._connected = True
