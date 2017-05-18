@@ -333,6 +333,7 @@ class TitleFetcher:
   _cookie = None
   _connected = False
   _redirected_stream = None
+  _redirected_url = None
   _content_finders = (TitleFinder, PNGFinder, JPEGFinder, GIFFinder)
   _url_finders = ()
 
@@ -553,7 +554,7 @@ class TitleFetcher:
       if not self.on_headers_done():
         return
 
-    if p.is_partial_body():
+    if not self._redirected_url and p.is_partial_body():
       chunk = p.recv_body()
       if self.finder is None:
         # redirected but has body received
@@ -564,6 +565,10 @@ class TitleFetcher:
         return
 
     if p.is_message_complete():
+      if self._redirected_url:
+        self.new_url(self._redirected_url)
+        self._redirected_url = None
+        return
       if self.finder is None:
         # redirected but has body received
         return
@@ -601,8 +606,14 @@ class TitleFetcher:
       else:
         newurl = urljoin(self.fullurl, self.headers['Location'])
         self._redirected_stream = self.stream
-        self.new_url(newurl)
-      return
+        addr = self.parse_url(newurl)
+        if addr != self.addr:
+          self.new_url(newurl)
+          return
+        else:
+          # same stream, read to complete
+          self._redirected_url = newurl
+      return True
 
     try:
       l = int(self.headers.get('Content-Length', None))

@@ -58,7 +58,6 @@ def test():
     'http://t.cn/zTOgr1n', # multiple redirections
     'http://www.galago-project.org/specs/notification/0.9/x408.html', # </TITLE\n>
     'http://x.co/dreamz', # redirection caused false ConnectionClosed error
-    'http://www.83wyt.com', # reversed meta attribute order
     'https://www.inoreader.com', # malformed start tag: <meta http-equiv="Content-Type" content="text/html" ; charset="UTF-8">
     'https://linuxtoy.org/archives/linux-deepin-2014-alpha-into-new-deepin-world.html', # charref outside ASCII
     'http://74.125.235.191/search?site=&source=hp&q=%E6%9C%8D%E5%8A%A1%E5%99%A8+SSD&btnG=Google+%E6%90%9C%E7%B4%A2', # right charset in HTTP, wrong in HTML
@@ -71,6 +70,7 @@ def test():
     'http://github.com/contact', # redirect and should not use GitHub API
     'http://caml.inria.fr/pub/docs/manual-ocaml/',
     'http://localhost/', # should fail with ValueError
+    'https://friends.nico',
   )
   main(urls)
 
