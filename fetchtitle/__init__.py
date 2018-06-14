@@ -599,12 +599,13 @@ class TitleFetcher:
     self.status_code = self.parser.get_status_code()
     if self.status_code in (301, 302, 307, 308):
       self.process_cookie() # or we may be redirecting to a loop
-      logger.debug('%s: redirect to %s', self.origurl, self.headers['Location'])
+      location = self.headers['Location'].replace(' ', '') # https://github.com/benoitc/http-parser/issues/75
+      logger.debug('%s: redirect to %s', self.origurl, location)
       self.followed_times += 1
       if self.followed_times > self.max_follows:
         self.run_callback(TooManyRedirection)
       else:
-        newurl = urljoin(self.fullurl, self.headers['Location'])
+        newurl = urljoin(self.fullurl, location)
         self._redirected_stream = self.stream
         addr = self.parse_url(newurl)
         if addr != self.addr:
