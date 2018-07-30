@@ -144,6 +144,6 @@ class RustCrate(URLFinder):
     url = url.format_map(self.match.groupdict())
     self.get_httpclient().fetch(url, callback = self._got_info)
 
-    def _got_info(self, res):
-      info = json.loads(res.body.decode('utf-8'))
-      self.done(info)
+  def _got_info(self, res):
+    info = json.loads(res.body.decode('utf-8'))
+    self.done(info)
