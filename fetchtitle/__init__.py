@@ -1,8 +1,7 @@
-__version__ = '2.1'
+__version__ = '2.2'
 __url__ = 'https://github.com/lilydjwg/fetchtitle'
 
 import re
-import time
 import struct
 import socket
 import ssl
@@ -338,7 +337,7 @@ class TitleFetcher:
   _url_finders = ()
 
   def __init__(self, url, callback, # *, commented for Python 2
-               timeout=None, max_follows=None, io_loop=None,
+               timeout=None, max_follows=None,
                content_finders=None, url_finders=None, referrer=None,
                run_at_init=True, resolver=None):
     '''
@@ -361,7 +360,7 @@ class TitleFetcher:
         default_io_loop = tornado.ioloop.IOLoop.current
     else:
         default_io_loop = tornado.ioloop.IOLoop.instance
-    self.io_loop = io_loop or default_io_loop()
+    self.io_loop = default_io_loop()
 
     if content_finders is not None:
       self._content_finders = content_finders
@@ -371,7 +370,7 @@ class TitleFetcher:
         self.resolver = resolver
     else:
         self.resolver = GlobalOnlyResolver()
-        self.resolver.initialize(io_loop=self.io_loop)
+        self.resolver.initialize()
 
     self.origurl = url
     self.url_visited = []
@@ -383,7 +382,6 @@ class TitleFetcher:
     mykwargs = {
       'timeout': self.timeout,
       'max_follows': self.max_follows,
-      'io_loop': self.io_loop,
       'content_finders': self._content_finders,
       'url_finders': self._url_finders,
       'referrer': self.fullurl,
@@ -545,7 +543,7 @@ class TitleFetcher:
     logger.debug('%s: received data: %d bytes', self.origurl, recved)
 
     p = self.parser
-    nparsed = p.execute(data, recved)
+    p.execute(data, recved)
     if close:
       # feed EOF
       p.execute(b'', 0)
