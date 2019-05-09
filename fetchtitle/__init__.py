@@ -3,32 +3,17 @@ __url__ = 'https://github.com/lilydjwg/fetchtitle'
 
 import re
 import struct
-import socket
-import ssl
 import logging
-import encodings.idna
-from functools import partial
 from collections import namedtuple
-from urllib.parse import urlsplit, urljoin
 from html.parser import HTMLParser
 from html.entities import entitydefs
-from ipaddress import ip_address
+from urllib.parse import urljoin
+import asyncio
 
-import tornado.ioloop
-import tornado.iostream
-import tornado.tcpclient
-# DON'T use CaresResolver here; it returns only IPv6 addresses for AF_UNSPEC
-from tornado.netutil import ThreadedResolver as Resolver
-from tornado.httpclient import AsyncHTTPClient
-
-# try to import C parser then fallback in pure python parser.
-try:
-  from http_parser.parser import HttpParser
-except ImportError:
-  from http_parser.pyparser import HttpParser
+import aiohttp
+import async_timeout
 
 UserAgent = 'FetchTitle/%s (%s)' % (__version__, __url__)
-_cookie_re = re.compile(r'(?:,\s*|^)([^=\s]+=[^;\s]+)')
 
 def get_charset_from_ctype(ctype):
   pos = ctype.find('charset=')
@@ -47,18 +32,6 @@ def get_charset_from_ctype(ctype):
     except LookupError:
       logger.warn('got unknown character set name %r, ignoring.', charset)
       return
-
-_context = None
-def get_ssl_context():
-  global _context
-  if not _context:
-    _context = ssl.create_default_context()
-    # have to when not verifying certificates
-    _context.check_hostname = False
-    # don't verify certificates; there are too many untrusted sites, and we
-    # won't get hurt by them
-    _context.verify_mode = ssl.CERT_NONE
-  return _context
 
 def strip_and_collapse_whitespace(s):
   # http://www.w3.org/TR/html5/infrastructure.html#strip-and-collapse-whitespace
@@ -153,21 +126,21 @@ class SingletonFactory:
 MediaType = namedtuple('MediaType', 'type size dimension')
 defaultMediaType = MediaType('application/octet-stream', None, None)
 
-ConnectionClosed = SingletonFactory('ConnectionClosed')
 TooManyRedirection = SingletonFactory('TooManyRedirection')
 Timeout = SingletonFactory('Timeout')
 TitleTooFaraway = SingletonFactory('TitleTooFaraway')
 
 logger = logging.getLogger('fetchtitle')
 
-class GlobalOnlyResolver(Resolver):
-  async def resolve(self, host, port, family=socket.AF_UNSPEC):
-    addrinfos = await super().resolve(host, port, family=family)
-    addrinfos = [x for x in addrinfos
-                 if ip_address(x[1][0]).is_global]
-    if not addrinfos:
-      raise socket.gaierror(-2, 'Name or service not global', host)
-    return addrinfos
+Result = namedtuple(
+  'Result',
+  'info status_code url_visited finder',
+)
+
+class Redirected(Exception):
+  def __init__(self, newurl, skip_urlfinder=False):
+    self.newurl = newurl
+    self.skip_urlfinder = skip_urlfinder
 
 class ContentFinder:
   buf = b''
@@ -288,341 +261,135 @@ class GIFFinder(ContentFinder):
       return self._mt._replace(dimension=s)
 
 class TitleFetcher:
-  status_code = 0
-  followed_times = 0 # 301, 302
-  resolver = None
-  finder = None
-  addr = None
-  stream = None
-  max_follows = 10
   timeout = 15
-  _finished = False
-  _cookie = None
-  _connected = False
-  _redirected_stream = None
-  _redirected_url = None
+  max_follows = 10
   _content_finders = (TitleFinder, PNGFinder, JPEGFinder, GIFFinder)
   _url_finders = ()
+  __our_session = False
+  user_agent = UserAgent
 
-  def __init__(self, url, callback, *,
-               timeout=None, max_follows=None,
-               content_finders=None, url_finders=None, referrer=None,
-               run_at_init=True, resolver=None):
-    '''
-    url: the (full) url to fetch
-    callback: called with title or MediaType or an instance of SingletonFactory
-    timeout: total time including redirection before giving up
-    max_follows: max redirections
+  @property
+  def session(self):
+    if not self._session:
+      s = aiohttp.ClientSession(headers={
+        'User-Agent': self.user_agent,
+      })
+      self.__our_session = True
+      self._session = s
+    return self._session
 
-    may raise:
-    <UnicodeError: label empty or too long> in host preparation
-    '''
-    self._callback = callback
-    self.referrer = referrer
-    if max_follows is not None:
-      self.max_follows = max_follows
+  def __init__(self, url, *,
+               session=None, timeout=None,
+               max_follows=None,
+               content_finders=None, url_finders=None):
+    self._session = session
 
     if timeout is not None:
       self.timeout = timeout
-    if hasattr(tornado.ioloop, 'current'):
-        default_io_loop = tornado.ioloop.IOLoop.current
-    else:
-        default_io_loop = tornado.ioloop.IOLoop.instance
-    self.io_loop = default_io_loop()
+    if max_follows is not None:
+      self.max_follows = max_follows
 
     if content_finders is not None:
       self._content_finders = content_finders
     if url_finders is not None:
       self._url_finders = url_finders
-    if resolver is not None:
-        self.resolver = resolver
-    else:
-        self.resolver = GlobalOnlyResolver()
-        self.resolver.initialize()
 
-    self.origurl = url
+    self.url = url
     self.url_visited = []
-    self._run_at_init = run_at_init
-    if run_at_init:
-      self.run()
 
-  def clone(self, *args, **kwargs):
-    mykwargs = {
-      'timeout': self.timeout,
-      'max_follows': self.max_follows,
-      'content_finders': self._content_finders,
-      'url_finders': self._url_finders,
-      'referrer': self.fullurl,
-      'run_at_init': self._run_at_init,
-      'resolver': self.resolver
-    }
-    mykwargs.update(kwargs)
-    return self.__class__(*args, **mykwargs)
+  async def run(self):
+    r = None
+    url = self.url
+    skip_urlfinder = False
 
-  def run(self):
-    if self.url_visited:
-      raise Exception("can't run again")
-    else:
-      self.start_time = self.io_loop.time()
-      self._timeout = self.io_loop.add_timeout(
-        self.timeout + self.start_time,
-        self.on_timeout,
-      )
-      try:
-        self.new_url(self.origurl)
-      except:
-        self.io_loop.remove_timeout(self._timeout)
-        raise
-
-  def on_timeout(self):
-    logger.debug('%s: request timed out', self.origurl)
-    self.run_callback(Timeout)
-
-  def parse_url(self, url):
-    '''parse `url`, set self.host and self._protocol and return address'''
-    self.url = u = urlsplit(url)
-    self.host = u.netloc
-
-    self._protocol = u.scheme
-    if u.scheme == 'http':
-      default_port = 80
-    elif u.scheme == 'https':
-      default_port = 443
-    else:
-      raise ValueError('bad url: %r' % url)
-
-    addr = u.hostname, u.port or default_port
-    return addr
-
-  def new_connection(self, addr):
-    '''set self.addr, self.stream and connect to host'''
-    host, port = addr
-    self.addr = addr
-
-    tcp = tornado.tcpclient.TCPClient(resolver=self.resolver)
-    if self._protocol == 'https':
-      ssl = get_ssl_context()
-    else:
-      ssl = None
-
-    logger.debug('%s: connecting to %s...', self.origurl, addr)
-    fu = tcp.connect(host, port, ssl_options = ssl)
-    fu.add_done_callback(self._new_connection_made)
-
-  def _new_connection_made(self, fu):
     try:
-      self.stream = fu.result()
-    except Exception as e:
-      self.run_callback(e)
-      return
+      async with async_timeout.timeout(self.timeout):
+        for _ in range(self.max_follows):
+          try:
+            r = await self._one_url(
+              url, skip_urlfinder=skip_urlfinder)
+          except Redirected as e:
+            url = e.newurl
+            skip_urlfinder = e.skip_urlfinder
+            continue
+          break
+    except asyncio.TimeoutError:
+      return Result(Timeout, 0, self.url_visited, None)
 
-    self.stream.set_close_callback(self.before_connected)
-    self.send_request()
+    if r is not None:
+      return r
+    else:
+      return Result(
+        TooManyRedirection, 0, self.url_visited, None,
+      )
 
-  def new_url(self, url):
+  async def _one_url(self, url, skip_urlfinder):
+    logger.debug('processing url: %s', url)
     self.url_visited.append(url)
-    self.fullurl = url
 
-    for finder in self._url_finders:
-      f = finder.match_url(url, self)
-      if f:
-        self.finder = f
-        f()
-        return
+    if not skip_urlfinder:
+      for finder in self._url_finders:
+        f = finder.match_url(url, self.session)
+        if f:
+          logger.debug('%r matched with url %s', f, url)
+          info = await f.run()
+          return Result(info, 0, self.url_visited, f)
 
-    addr = self.parse_url(url)
-    if addr != self.addr:
-      if self.stream:
-        self.stream.close()
-      self.new_connection(addr)
-    else:
-      logger.debug('%s: try to reuse existing connection to %s', self.origurl, self.addr)
-      try:
-        self.send_request(nocallback=True)
-      except tornado.iostream.StreamClosedError:
-        logger.debug('%s: server at %s doesn\'t like keep-alive, will reconnect.', self.origurl, self.addr)
-        # The close callback should have already run
-        self.stream.close()
-        self.new_connection(addr)
+    async with self.session.get(
+      url, allow_redirects = False, ssl = False,
+    ) as r:
 
-  def run_callback(self, arg):
-    self.io_loop.remove_timeout(self._timeout)
-    if self.stream:
-      self.stream.close()
-    if not self._finished:
-      self._finished = True
-      self._callback(arg, self)
+      if r.status in (301, 302, 307, 308):
+        newurl = r.headers.get('Location')
+        newurl = urljoin(url, newurl)
+        logger.debug('redirected to %s', newurl)
+        raise Redirected(newurl)
 
-  def send_request(self, nocallback=False):
-    self._connected = True
-    req = ['GET %s HTTP/1.1',
-           'Host: %s',
-           # t.co will return 200 and use js/meta to redirect using the following :-(
-           # 'User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:16.0) Gecko/20100101 Firefox/16.0',
-           'User-Agent: %s' % UserAgent,
-           'Accept: text/html,application/xhtml+xml;q=0.9,*/*;q=0.7',
-           'Accept-Language: zh-cn,zh;q=0.7,en;q=0.3',
-           'Accept-Charset: utf-8,gb18030;q=0.7,*;q=0.7',
-           'Accept-Encoding: gzip, deflate',
-           'Connection: keep-alive',
-          ]
-    if self.referrer is not None:
-      req.append('Referer: ' + self.referrer.replace('%', '%%'))
-    path = self.url.path or '/'
-    if self.url.query:
-      path += '?' + self.url.query
-    req = '\r\n'.join(req) % (
-      path, self._prepare_host(self.host),
-    )
-    if self._cookie:
-      req += '\r\n' + self._cookie
-    req += '\r\n\r\n'
-    self.stream.write(req.encode())
-    self.headers_done = False
-    self.parser = HttpParser(decompress=True)
-    if not nocallback:
-      self.stream.read_until_close(
-        # self.addr and self.stream may have been changed when close callback is run
-        partial(self.on_data, close=True, addr=self.addr, stream=self.stream),
-        streaming_callback=self.on_data,
-      )
+      ctype = r.headers.get('Content-Type', 'text/html')
+      l = r.headers.get('Content-Length', None)
+      if l:
+        l = int(l)
+      mt = defaultMediaType._replace(type=ctype, size=l)
+      logger.debug('media type: %r', mt)
+      for finder in self._content_finders:
+        f = finder.match_type(mt)
+        if f:
+          logger.debug('finder %r matches', f)
+          break
 
-  def _prepare_host(self, host):
-    host = encodings.idna.nameprep(host)
-    return b'.'.join(encodings.idna.ToASCII(x) if x else b''
-                     for x in host.split('.')).decode('ascii')
+      while True:
+        data = await r.content.readany()
+        if not data:
+          break
 
-  def on_data(self, data, close=False, addr=None, stream=None):
-    if close:
-      logger.debug('%s: connection to %s closed.', self.origurl, addr)
+        t = f(data)
+        if t is not None:
+          return Result(t, r.status, self.url_visited, f)
 
-    if self.stream.error:
-      self.run_callback(self.stream.error)
-      return
-
-    if (close and stream and self._redirected_stream is stream) or self._finished:
-      # The connection is closing, and we are being redirected or we're done.
-      self._redirected_stream = None
-      return
-
-    recved = len(data)
-    logger.debug('%s: received data: %d bytes', self.origurl, recved)
-
-    p = self.parser
-    p.execute(data, recved)
-    if close:
-      # feed EOF
-      p.execute(b'', 0)
-
-    if not self.headers_done and p.is_headers_complete():
-      if not self.on_headers_done():
-        return
-
-    if not self._redirected_url and p.is_partial_body():
-      chunk = p.recv_body()
-      if self.finder is None:
-        # redirected but has body received
-        return
-      t = self.feed_finder(chunk)
-      if t is not None:
-        self.run_callback(t)
-        return
-
-    if p.is_message_complete():
-      if self._redirected_url:
-        self.new_url(self._redirected_url)
-        self._redirected_url = None
-        return
-      if self.finder is None:
-        # redirected but has body received
-        return
-      t = self.feed_finder(None)
-      # if title not found, t is None
-      self.run_callback(t)
-    elif close:
-      self.run_callback(self.stream.error or ConnectionClosed)
-
-  def before_connected(self):
-    '''check if something wrong before connected'''
-    if not self._connected and not self._finished:
-      self.run_callback(self.stream.error)
-
-  def process_cookie(self):
-    setcookie = self.headers.get('Set-Cookie', None)
-    if not setcookie:
-      return
-
-    cookies = _cookie_re.findall(setcookie)
-    self._cookie = 'Cookie: ' + '; '.join(cookies)
-
-  def on_headers_done(self):
-    '''returns True if should proceed, None if should stop for current chunk'''
-    self.headers_done = True
-    self.headers = self.parser.get_headers()
-
-    self.status_code = self.parser.get_status_code()
-    if self.status_code in (301, 302, 307, 308):
-      self.process_cookie() # or we may be redirecting to a loop
-      location = self.headers['Location'].replace(' ', '') # https://github.com/benoitc/http-parser/issues/75
-      logger.debug('%s: redirect to %s', self.origurl, location)
-      self.followed_times += 1
-      if self.followed_times > self.max_follows:
-        self.run_callback(TooManyRedirection)
+  def __del__(self):
+    if self.__our_session:
+      loop = asyncio.get_event_loop()
+      closer = self.session.close()
+      if loop.is_running():
+        asyncio.ensure_future(closer)
       else:
-        newurl = urljoin(self.fullurl, location)
-        self._redirected_stream = self.stream
-        addr = self.parse_url(newurl)
-        if addr != self.addr:
-          self.new_url(newurl)
-          return
-        else:
-          # same stream, read to complete
-          self._redirected_url = newurl
-      return True
-
-    try:
-      l = int(self.headers.get('Content-Length', None))
-    except (ValueError, TypeError):
-      l = None
-
-    ctype = self.headers.get('Content-Type', 'text/html')
-    mt = defaultMediaType._replace(type=ctype, size=l)
-    for finder in self._content_finders:
-      f = finder.match_type(mt)
-      if f:
-        self.finder = f
-        break
-    else:
-      self.run_callback(mt)
-      return
-
-    return True
-
-  def feed_finder(self, chunk):
-    '''feed data to finder, return the title if found'''
-    t = self.finder(chunk)
-    if t is not None:
-      return t
+        asyncio.run(closer)
 
 class URLFinder:
-  httpclient = None
-  def __init__(self, url, fetcher, match=None):
-    self.fullurl = url
+  def __init__(self, url, session, match=None):
+    self.session = session
+    self.url = url
     self.match = match
-    self.fetcher = fetcher
 
   @classmethod
-  def match_url(cls, url, fetcher):
+  def match_url(cls, url, session):
     if hasattr(cls, '_url_pat'):
       m = cls._url_pat.match(url)
       if m is not None:
-        return cls(url, fetcher, m)
-    if hasattr(cls, '_match_url') and cls._match_url(url, fetcher):
-      return cls(url, fetcher)
+        return cls(url, session, m)
+    if hasattr(cls, '_match_url') and \
+       cls._match_url(url, session):
+      return cls(url, session)
 
-  def done(self, info):
-    self.fetcher.run_callback(info)
-
-  def get_httpclient(self):
-    return self.httpclient or AsyncHTTPClient()
-
+  async def run(self):
+    raise NotImplementedError

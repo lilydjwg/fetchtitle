@@ -7,7 +7,7 @@ setup(
   name = 'fetchtitle',
   version = fetchtitle.__version__,
   packages = find_packages(),
-  install_requires = ['tornado', 'http_parser'],
+  install_requires = ['aiohttp', 'async_timeout'],
 
   author = 'lilydjwg',
   author_email = 'lilydjwg@gmail.com',

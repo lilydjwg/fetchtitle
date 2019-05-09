@@ -1,38 +1,42 @@
-from . import *
+import logging
+import asyncio
 
-def main(urls, *, url_finders=None):
+from . import TitleFetcher
+from .fixups import fixup
+
+logger = logging.getLogger(__name__)
+
+async def main(urls, *, url_finders=None):
+  fixup()
+
   from .extrafinders import GithubFinder, GithubUserFinder, ZhihuZhuanlan
   if not url_finders:
     url_finders = (GithubFinder, GithubUserFinder, ZhihuZhuanlan)
 
-  class BatchFetcher:
-    n = 0
-    def __call__(self, title, fetcher):
-      if isinstance(title, bytes):
-        try:
-          title = title.decode('gb18030')
-        except UnicodeDecodeError:
-          pass
-      url = ' <- '.join(reversed(fetcher.url_visited))
-      logger.info('done: [%d] %s <- %s' % (fetcher.status_code, title, url))
-      self.n -= 1
-      if not self.n:
-        tornado.ioloop.IOLoop.instance().stop()
-
-    def add(self, url):
-      TitleFetcher(url, self, url_finders=url_finders)
-      self.n += 1
-
   try:
     from nicelogger import enable_pretty_logging
+    enable_pretty_logging()
   except ImportError:
-    from tornado.log import enable_pretty_logging
-  enable_pretty_logging()
+    pass
 
-  f = BatchFetcher()
-  for u in urls:
-    f.add(u)
-  tornado.ioloop.IOLoop.instance().start()
+  futures = [
+    TitleFetcher(url, url_finders=url_finders).run()
+    for url in urls
+  ]
+  for fu in asyncio.as_completed(futures):
+    try:
+      result = await fu
+    except Exception:
+      logger.exception('an error occurred')
+      continue
+
+    info = result.info
+    urls = result.url_visited
+    status_code = result.status_code
+
+    url = ' <- '.join(reversed(urls))
+    logger.info('done: [%d] %s <- %s',
+                status_code, info, url)
 
 def test():
   urls = (
@@ -71,7 +75,7 @@ def test():
     'http://localhost/', # should fail with ValueError
     'https://friends.nico',
   )
-  main(urls)
+  asyncio.run(main(urls))
 
 if __name__ == "__main__":
   import sys
@@ -83,6 +87,6 @@ if __name__ == "__main__":
     elif sys.argv[1] == 'test':
       test()
     else:
-      main(sys.argv[1:])
+      asyncio.run(main(sys.argv[1:]))
   except KeyboardInterrupt:
     print('Interrupted.')
