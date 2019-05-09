@@ -357,6 +357,9 @@ class TitleFetcher:
           logger.debug('finder %r matches', f)
           break
 
+      if not f:
+        return Result(mt, r.status, self.url_visited, None)
+
       while True:
         data = await r.content.readany()
         if not data:
