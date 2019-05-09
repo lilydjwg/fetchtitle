@@ -1,5 +1,5 @@
 Requires
 
-* Python 2 + ipaddress or Python >= 3.5
-* Tornado > 3.1
+* Python >= 3.5
+* Tornado >= 5.0
 * http_parser

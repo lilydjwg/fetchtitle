@@ -1,10 +1,9 @@
 from . import *
 
-def main(urls, # *, commented for Python 2
-         url_finders=None):
-  from .extrafinders import GithubFinder, GithubUserFinder
+def main(urls, *, url_finders=None):
+  from .extrafinders import GithubFinder, GithubUserFinder, ZhihuZhuanlan
   if not url_finders:
-    url_finders = (GithubFinder, GithubUserFinder)
+    url_finders = (GithubFinder, GithubUserFinder, ZhihuZhuanlan)
 
   class BatchFetcher:
     n = 0

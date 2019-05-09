@@ -1,4 +1,4 @@
-__version__ = '2.2'
+__version__ = '3.0dev'
 __url__ = 'https://github.com/lilydjwg/fetchtitle'
 
 import re
@@ -9,27 +9,11 @@ import logging
 import encodings.idna
 from functools import partial
 from collections import namedtuple
-
-try:
-  py3 = True
-  from urllib.parse import urlsplit, urljoin
-except ImportError:
-  py3 = False
-  from urlparse import urlsplit, urljoin  # py2
-  chr = unichr
-
-try:
-  from html.parser import HTMLParser
-except ImportError:    #  py2
-  from HTMLParser import HTMLParser
-
-try:
-  from html.entities import entitydefs
-except ImportError:
-  from htmlentitydefs import entitydefs # py2
-
+from urllib.parse import urlsplit, urljoin
+from html.parser import HTMLParser
+from html.entities import entitydefs
 from ipaddress import ip_address
-from tornado import gen
+
 import tornado.ioloop
 import tornado.iostream
 import tornado.tcpclient
@@ -88,28 +72,19 @@ class HtmlTitleParser(HTMLParser):
 
   def __init__(self):
     # use a list to store literal bytes and escaped Unicode
-    if py3:
-      super().__init__(convert_charrefs=False)
-    else:
-      HTMLParser.__init__(self)
+    super().__init__(convert_charrefs=False)
     self.title = []
 
   def feed(self, bytesdata):
     if bytesdata:
       data = bytesdata.decode('latin1')
-      if py3:
-        super().feed(data)
-      else:
-        HTMLParser.feed(self, data)
+      super().feed(data)
     else:
       self.close()
 
   def close(self):
     self._check_result(force=True)
-    if py3:
-      super().close()
-    else:
-      HTMLParser.close(self)
+    super().close()
 
   def handle_starttag(self, tag, attrs):
     # Google Search uses wrong meta info
@@ -128,9 +103,8 @@ class HtmlTitleParser(HTMLParser):
     if not self._title_coming:
       self._check_result()
 
-  def handle_data(self, data, # *, commented for Python 2
-                  unicode=False):
-    if not unicode and py3:
+  def handle_data(self, data, *, unicode=False):
+    if not unicode:
       data = data.encode('latin1') # encode back
     if self._title_coming:
       self.title.append(data)
@@ -155,18 +129,16 @@ class HtmlTitleParser(HTMLParser):
       ch = '&' + name
     self.handle_data(ch, unicode=True)
 
-  def _check_result(self, # *, commented for Python 2
-                    force=False):
+  def _check_result(self, *, force=False):
     if self.result is not None:
       return
 
     if (force or self.charset is not None) \
        and self.title:
-      string_type = str if py3 else unicode
       # always use 'replace' because surrogateescape may not be used elsewhere
       error_handler = 'replace'
-      self.result = strip_and_collapse_whitespace(string_type().join(
-        x if isinstance(x, string_type) else x.decode(
+      self.result = strip_and_collapse_whitespace(''.join(
+        x if isinstance(x, str) else x.decode(
           self.charset or self.default_charset,
           errors = error_handler,
         ) for x in self.title
@@ -189,14 +161,13 @@ TitleTooFaraway = SingletonFactory('TitleTooFaraway')
 logger = logging.getLogger('fetchtitle')
 
 class GlobalOnlyResolver(Resolver):
-  @gen.coroutine
-  def resolve(self, host, port, family=socket.AF_UNSPEC):
-    addrinfos = yield super().resolve(host, port, family=family)
+  async def resolve(self, host, port, family=socket.AF_UNSPEC):
+    addrinfos = await super().resolve(host, port, family=family)
     addrinfos = [x for x in addrinfos
                  if ip_address(x[1][0]).is_global]
     if not addrinfos:
       raise socket.gaierror(-2, 'Name or service not global', host)
-    raise gen.Return(addrinfos)
+    return addrinfos
 
 class ContentFinder:
   buf = b''
@@ -278,10 +249,7 @@ class JPEGFinder(ContentFinder):
         logging.warn('Bad JPEG signature: %r', self.buf[:3])
         return self._mt._replace(dimension='Bad JPEG')
       else:
-        if py3:
-          self.blocklen = self.buf[4] * 256 + self.buf[5] + 2
-        else:
-          self.blocklen = ord(self.buf[4]) * 256 + ord(self.buf[5]) + 2
+        self.blocklen = self.buf[4] * 256 + self.buf[5] + 2
         self.buf = self.buf[2:]
         self.isfirst = False
 
@@ -336,7 +304,7 @@ class TitleFetcher:
   _content_finders = (TitleFinder, PNGFinder, JPEGFinder, GIFFinder)
   _url_finders = ()
 
-  def __init__(self, url, callback, # *, commented for Python 2
+  def __init__(self, url, callback, *,
                timeout=None, max_follows=None,
                content_finders=None, url_finders=None, referrer=None,
                run_at_init=True, resolver=None):
@@ -520,8 +488,6 @@ class TitleFetcher:
       )
 
   def _prepare_host(self, host):
-    if not py3 and isinstance(host, str):
-      host = host.decode("utf-8")
     host = encodings.idna.nameprep(host)
     return b'.'.join(encodings.idna.ToASCII(x) if x else b''
                      for x in host.split('.')).decode('ascii')
