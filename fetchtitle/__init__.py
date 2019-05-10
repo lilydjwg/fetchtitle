@@ -362,12 +362,15 @@ class TitleFetcher:
 
       while True:
         data = await r.content.readany()
+        t = f(data)
+
+        if t is not None:
+          return Result(t, r.status, self.url_visited, f)
+
         if not data:
           break
 
-        t = f(data)
-        if t is not None:
-          return Result(t, r.status, self.url_visited, f)
+      return Result(None, r.status, self.url_visited, f)
 
   def __del__(self):
     if self.__our_session:
