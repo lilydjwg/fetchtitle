@@ -1,6 +1,5 @@
 import re
 import logging
-import json
 
 from . import (
   URLFinder,
