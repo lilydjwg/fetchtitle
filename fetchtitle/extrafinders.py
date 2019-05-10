@@ -1,5 +1,6 @@
 import re
 import logging
+import json
 
 from . import (
   URLFinder,
@@ -76,21 +77,10 @@ class WeixinCopy(URLFinder):
       return title, src
 
 class NeteaseMusic(URLFinder):
-  _url_pat = re.compile(r'http://music\.163\.com/(?:#/)?(?:m/)?(?P<type>\w+)\?id=(?P<id>\d+)')
+  _url_pat = re.compile(r'https?://music\.163\.com/#/(.*)$')
 
   async def run(self):
-    if self.match.group('type') == 'album':
-      url = 'http://music.163.com/api/{type}/{id}?id={id}&csrf_token='
-    else:
-      url = 'http://music.163.com/api/{type}/detail?id={id}&ids=[{id}]&csrf_token='
-    url = url.format_map(self.match.groupdict())
-
-    async with self.session.get(
-      self.url,
-      headers = {'Referer': 'http://music.163.com/'},
-    ) as res:
-      info = await res.json()
-      return self.match.group('type'), info
+    raise Redirected('https://music.163.com/%s' % self.match.group(1))
 
 class ZhihuZhuanlan(URLFinder):
   _url_pat = re.compile(r'https?://zhuanlan\.zhihu\.com/p/(?P<id>\d+)')
