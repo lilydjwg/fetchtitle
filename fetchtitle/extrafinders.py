@@ -1,5 +1,12 @@
 import re
 import logging
+import json
+
+try:
+  from lxml.html import fromstring
+  has_lxml = True
+except ImportError:
+  has_lxml = False
 
 from . import (
   URLFinder,
@@ -82,15 +89,21 @@ class NeteaseMusic(URLFinder):
     raise Redirected('https://music.163.com/%s' % self.match.group(1))
 
 class ZhihuZhuanlan(URLFinder):
-  _url_pat = re.compile(r'https?://zhuanlan\.zhihu\.com/p/(?P<id>\d+)')
+  if has_lxml:
+    _url_pat = re.compile(r'https?://zhuanlan\.zhihu\.com/p/(?P<id>\d+)')
+  else:
+    _url_pat = re.compile(r'a^')
 
   async def run(self):
-    url = 'http://zhuanlan.zhihu.com/api/posts/{id}'
-    url = url.format_map(self.match.groupdict())
+    id = self.match.group('id')
+    async with self.session.get(self.url) as res:
+      page = await res.text()
+      doc = fromstring(page)
+      static = doc.xpath('//script[@id="js-initialData"]')[0]
+      content = json.loads(static.text)['initialState']
 
-    async with self.session.get(url) as res:
-      info = await res.json()
-      return info
+      article = content['entities']['articles'][id]
+      return article
 
 class RustCrate(URLFinder):
   _url_pat = re.compile(r'https?://crates\.io/crates/(?P<crate>[^/#]+)/?')
