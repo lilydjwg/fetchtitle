@@ -41,14 +41,14 @@ class GithubUserFinder(GithubFinder):
 
 class SogouImage(URLFinder):
   _url_pat = re.compile(r'http://pinyin\.cn/.+$')
-  _img_pat = re.compile(br'"http://input\.shouji\.sogou\.com/multimedia/[^.]+\.jpg"')
+  _img_pat = re.compile(r'"http://img\.shouji\.sogou\.com/[^.]+\.png"')
 
   async def run(self):
     async with self.session.get(self.url) as res:
       body = await res.text()
       m = self._img_pat.search(body)
       if m:
-        url = self.url = m.group()[1:-1].decode('latin1')
+        url = self.url = m.group()[1:-1]
         raise Redirected(url)
 
 class Imagebin(URLFinder):
