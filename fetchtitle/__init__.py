@@ -392,7 +392,7 @@ class URLFinder:
     if hasattr(cls, '_url_pat'):
       m = cls._url_pat.match(url)
       if m is not None:
-        return cls(url, session, fetcher, m)
+        return cls(url, session, m)
     if hasattr(cls, '_match_url') and \
        cls._match_url(url, session, fetcher):
       return cls(url, session, fetcher)
