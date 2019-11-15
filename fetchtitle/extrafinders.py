@@ -21,9 +21,9 @@ class GithubFinder(URLFinder):
   _api_pat = 'https://api.github.com/repos/{repo_path}'
 
   @classmethod
-  def match_url(cls, url, fetcher):
+  def match_url(cls, url, session, fetcher):
     if not getattr(fetcher, '_no_github', False):
-      return super().match_url(url, fetcher)
+      return super().match_url(url, session, fetcher)
 
   async def run(self):
     m = self.match

@@ -9,9 +9,9 @@ logger = logging.getLogger(__name__)
 async def main(urls, *, url_finders=None):
   fixup()
 
-  from .extrafinders import GithubFinder, GithubUserFinder, ZhihuZhuanlan, NeteaseMusic
+  from .extrafinders import GithubFinder, GithubUserFinder, ZhihuZhuanlan, NeteaseMusic, SogouImage
   if not url_finders:
-    url_finders = (GithubFinder, GithubUserFinder, ZhihuZhuanlan, NeteaseMusic)
+    url_finders = (GithubFinder, GithubUserFinder, ZhihuZhuanlan, NeteaseMusic, SogouImage)
 
   try:
     from nicelogger import enable_pretty_logging

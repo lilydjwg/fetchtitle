@@ -329,7 +329,7 @@ class TitleFetcher:
 
     if not skip_urlfinder:
       for finder in self._url_finders:
-        f = finder.match_url(url, self.session)
+        f = finder.match_url(url, self.session, self)
         if f:
           logger.debug('%r matched with url %s', f, url)
           info = await f.run()
@@ -388,14 +388,14 @@ class URLFinder:
     self.match = match
 
   @classmethod
-  def match_url(cls, url, session):
+  def match_url(cls, url, session, fetcher):
     if hasattr(cls, '_url_pat'):
       m = cls._url_pat.match(url)
       if m is not None:
-        return cls(url, session, m)
+        return cls(url, session, fetcher, m)
     if hasattr(cls, '_match_url') and \
-       cls._match_url(url, session):
-      return cls(url, session)
+       cls._match_url(url, session, fetcher):
+      return cls(url, session, fetcher)
 
   async def run(self):
     raise NotImplementedError
