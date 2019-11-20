@@ -61,7 +61,7 @@ class Imagebin(URLFinder):
 
 class WeixinCopy(URLFinder):
   _url_pat = re.compile(r'http://mp\.weixin\.qq\.com/s\?')
-  _src_pat = re.compile(br"var\s+msg_source_url\s+=\s+'([^']+)'")
+  _src_pat = re.compile(r"var\s+msg_source_url\s+=\s+'([^']+)'")
 
   async def run(self):
     async with self.session.get(self.url) as res:
@@ -74,13 +74,12 @@ class WeixinCopy(URLFinder):
       else:
         src = None
 
-      p = HtmlTitleParser()
-      p.feed(res.body)
-      if p.result:
-        title = p.result
-      else:
-        title = None
-      return title, src
+      body = await res.text()
+      doc = fromstring(body)
+      title = doc.xpath('//meta[@property="og:title"]')[0].get('content')
+      author = doc.xpath('//meta[@property="og:article:author"]')[0].get('content')
+
+      return '%s - %s ' % (title, author), src
 
 class NeteaseMusic(URLFinder):
   _url_pat = re.compile(r'https?://music\.163\.com/#/(.*)$')
