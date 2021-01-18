@@ -339,7 +339,7 @@ class TitleFetcher:
       url, allow_redirects = False, ssl = False,
     ) as r:
 
-      if r.status in (301, 302, 307, 308):
+      if r.status in (301, 302, 303, 307, 308):
         newurl = r.headers.get('Location')
         newurl = urljoin(url, newurl)
         logger.debug('redirected to %s', newurl)
