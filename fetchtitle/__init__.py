@@ -92,7 +92,10 @@ class HtmlTitleParser(HTMLParser):
       x = int(name[1:], 16)
     else:
       x = int(name)
-    ch = chr(x)
+    try:
+      ch = chr(x)
+    except ValueError:
+      ch = '\ufffd' # out-of-range chars
     self.handle_data(ch, unicode=True)
 
   def handle_entityref(self, name):
