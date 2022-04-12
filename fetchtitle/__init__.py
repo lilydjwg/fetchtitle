@@ -300,7 +300,7 @@ class TitleFetcher:
     self.url = url
     self.url_visited = []
 
-  async def run(self):
+  async def run(self, proxy=None):
     r = None
     url = self.url
     skip_urlfinder = False
@@ -310,7 +310,10 @@ class TitleFetcher:
         for _ in range(self.max_follows):
           try:
             r = await self._one_url(
-              url, skip_urlfinder=skip_urlfinder)
+              url,
+              skip_urlfinder = skip_urlfinder,
+              proxy = proxy,
+            )
           except Redirected as e:
             url = e.newurl
             skip_urlfinder = e.skip_urlfinder
@@ -318,6 +321,8 @@ class TitleFetcher:
           break
     except asyncio.TimeoutError:
       return Result(Timeout, 0, self.url_visited, None)
+    finally:
+      await self.close()
 
     if r is not None:
       return r
@@ -326,7 +331,7 @@ class TitleFetcher:
         TooManyRedirection, 0, self.url_visited, None,
       )
 
-  async def _one_url(self, url, skip_urlfinder):
+  async def _one_url(self, url, *, skip_urlfinder, proxy):
     logger.debug('processing url: %s', url)
     self.url_visited.append(url)
 
@@ -340,6 +345,7 @@ class TitleFetcher:
 
     async with self.session.get(
       url, allow_redirects = False, ssl = False,
+      proxy = proxy,
     ) as r:
 
       if r.status in (301, 302, 303, 307, 308):
@@ -375,14 +381,10 @@ class TitleFetcher:
 
       return Result(None, r.status, self.url_visited, f)
 
-  def __del__(self):
-    if self.__our_session:
-      loop = asyncio.get_event_loop()
-      closer = self.session.close()
-      if loop.is_running():
-        asyncio.ensure_future(closer)
-      else:
-        asyncio.run(closer)
+  async def close(self):
+    if self.__our_session and self._session:
+      await self._session.close()
+      self._session = None
 
 class URLFinder:
   def __init__(self, url, session, match=None):
